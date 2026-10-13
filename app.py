@@ -19,7 +19,9 @@ def validate_api_key(api_key):
     if not normalized_key:
         raise ValueError("Inserisci una OpenAI API Key valida.")
     if not normalized_key.startswith("sk-"):
-        raise ValueError("La chiave OpenAI non sembra valida. Controlla che inizi con 'sk-'.")
+        raise ValueError(
+            "La chiave OpenAI non sembra valida. Controlla che inizi con 'sk-'."
+        )
     return normalized_key
 
 
