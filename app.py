@@ -4,13 +4,49 @@ import logging
 import streamlit as st
 from openai import OpenAI, OpenAIError
 
-from app_helpers import (
-    build_welcome_message,
-    normalize_user_input,
-    validate_api_key,
-)
-
 logger = logging.getLogger(__name__)
+
+
+def normalize_user_input(value):
+    """Return a trimmed string from the user input."""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def validate_api_key(api_key):
+    """Validate that an OpenAI API key is present and return the sanitized value."""
+    normalized_key = normalize_user_input(api_key)
+    if not normalized_key:
+        raise ValueError("Inserisci una OpenAI API Key valida.")
+    if not normalized_key.startswith("sk-"):
+        raise ValueError("La chiave OpenAI non sembra valida. Controlla che inizi con 'sk-'.")
+    return normalized_key
+
+
+def build_welcome_message():
+    """Return the initial consultant-style onboarding message."""
+    return (
+        "Benvenuto in ImpresaAI Pro.\n\n"
+        "Per preparare un'analisi mirata, descrivi l'impresa rispondendo, anche "
+        "approssimativamente, alle domande pertinenti:\n\n"
+        "1. In quale settore operi, quali prodotti o servizi offri e in quale area geografica?\n"
+        "2. Chi sono i clienti principali e come raggiungi/acquisisci i clienti "
+        "(canali, ciclo di vendita, frequenza di riacquisto)?\n"
+        "3. Come genera ricavi l'attività? Se disponibili, indica fatturato o volumi, "
+        "prezzi medi, margini e principali costi.\n"
+        "4. Come si svolge l'operatività: processi critici, capacità, fornitori, "
+        "dimensione del team e colli di bottiglia?\n"
+        "5. Quali sono oggi i principali concorrenti o alternative e il tuo elemento "
+        "di differenziazione?\n"
+        "6. Qual è il problema prioritario, quale risultato vuoi ottenere e in quale "
+        "orizzonte temporale?\n"
+        "7. Quali indicatori monitori già, quale budget/risorse puoi dedicare e quali "
+        "vincoli devo considerare?\n\n"
+        "Puoi rispondere per punti; se un dato non è disponibile, scrivi "
+        "\"non disponibile\". Ti farò domande di approfondimento solo dove servono."
+    )
+
 
 st.set_page_config(page_title="ImpresaAI Pro", page_icon="📊", layout="wide")
 
@@ -184,3 +220,4 @@ if user_input:
 
         st.session_state.messages.append(
             {"role": "assistant", "content": full_response}
+        )
