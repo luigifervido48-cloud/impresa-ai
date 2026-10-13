@@ -1,4 +1,3 @@
-import hmac
 import logging
 
 import streamlit as st
@@ -66,34 +65,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-try:
-    access_password = st.secrets["ACCESS_PASSWORD"]
-except (FileNotFoundError, KeyError):
-    st.error(
-        "Configurazione mancante: imposta ACCESS_PASSWORD nei Secrets di Streamlit."
-    )
-    st.stop()
-
-if not isinstance(access_password, str) or not access_password:
-    st.error("ACCESS_PASSWORD deve essere configurata come testo non vuoto.")
-    st.stop()
-
-if "autenticato" not in st.session_state:
-    st.session_state.autenticato = False
-
-if not st.session_state.autenticato:
-    st.markdown("### 🔒 Piattaforma privata")
-    st.info("Inserisci la password fornita dall'amministratore per accedere.")
-    pass_input = st.text_input("Password di accesso", type="password")
-    if st.button("Accedi", use_container_width=True):
-        if hmac.compare_digest(
-            pass_input.encode("utf-8"), access_password.encode("utf-8")
-        ):
-            st.session_state.autenticato = True
-            st.rerun()
-        st.error("Password errata. Accesso negato.")
-    st.stop()
-
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": build_welcome_message()}
@@ -150,12 +121,7 @@ with st.sidebar:
         ]
         st.rerun()
 
-    if st.button("Esci", use_container_width=True):
-        st.session_state.autenticato = False
-        st.session_state.pop("messages", None)
-        st.rerun()
-
-    st.caption("Le credenziali sono configurate nei Secrets del server.")
+    st.caption("La chiave API è configurata nei Secrets del server.")
 
 try:
     openai_api_key = validate_api_key(st.secrets["OPENAI_API_KEY"])
