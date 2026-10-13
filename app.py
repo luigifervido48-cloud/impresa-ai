@@ -1,51 +1,13 @@
 import logging
-
 import streamlit as st
 from openai import OpenAI, OpenAIError
 
+from app_helpers import (
+    build_welcome_message,
+    normalize_user_input,
+)
+
 logger = logging.getLogger(__name__)
-
-
-def normalize_user_input(value):
-    """Return a trimmed string from the user input."""
-    if value is None:
-        return ""
-    return str(value).strip()
-
-
-def validate_api_key(api_key):
-    """Validate that an OpenAI API key is present and return the sanitized value."""
-    normalized_key = normalize_user_input(api_key)
-    if not normalized_key:
-        raise ValueError("Inserisci una OpenAI API Key valida.")
-    if not normalized_key.startswith("sk-"):
-        raise ValueError("La chiave OpenAI non sembra valida. Controlla che inizi con 'sk-'.")
-    return normalized_key
-
-
-def build_welcome_message():
-    """Return the initial consultant-style onboarding message."""
-    return (
-        "Benvenuto in ImpresaAI Pro.\n\n"
-        "Per preparare un'analisi mirata, descrivi l'impresa rispondendo, anche "
-        "approssimativamente, alle domande pertinenti:\n\n"
-        "1. In quale settore operi, quali prodotti o servizi offri e in quale area geografica?\n"
-        "2. Chi sono i clienti principali e come raggiungi/acquisisci i clienti "
-        "(canali, ciclo di vendita, frequenza di riacquisto)?\n"
-        "3. Come genera ricavi l'attività? Se disponibili, indica fatturato o volumi, "
-        "prezzi medi, margini e principali costi.\n"
-        "4. Come si svolge l'operatività: processi critici, capacità, fornitori, "
-        "dimensione del team e colli di bottiglia?\n"
-        "5. Quali sono oggi i principali concorrenti o alternative e il tuo elemento "
-        "di differenziazione?\n"
-        "6. Qual è il problema prioritario, quale risultato vuoi ottenere e in quale "
-        "orizzonte temporale?\n"
-        "7. Quali indicatori monitori già, quale budget/risorse puoi dedicare e quali "
-        "vincoli devo considerare?\n\n"
-        "Puoi rispondere per punti; se un dato non è disponibile, scrivi "
-        "\"non disponibile\". Ti farò domande di approfondimento solo dove servono."
-    )
-
 
 st.set_page_config(page_title="ImpresaAI Pro", page_icon="📊", layout="wide")
 
@@ -73,35 +35,33 @@ if "messages" not in st.session_state:
 SYSTEM_PROMPT = """
 Sei "ImpresaAI Pro", un consulente strategico aziendale di livello executive.
 
-Obiettivo: comprendere in modo strutturato l'impresa, individuare cause e priorità e formulare raccomandazioni concrete, tecnicamente motivate e misurabili.
+Obiettivo: analizzare rapidamente un’impresa, identificarne il volto competitivo, il collo di bottiglia operativo e costruire una strategia concreta.
 
 Regole:
-- Usa italiano professionale e un lessico tecnico appropriato, spiegando i termini specialistici quando utile.
-- Adatta profondità e raccomandazioni al settore, alla dimensione, alla maturità e alle risorse dell'impresa.
-- In fase di raccolta dati, fai domande specifiche e pertinenti prima di trarre conclusioni. Organizza le domande in piccoli blocchi (massimo 5 per turno), evita di ripetere informazioni già fornite e chiedi approfondimenti solo sui punti che cambiano davvero l'analisi.
-- Indaga, quando rilevante, su: offerta e modello di ricavo; segmento clienti e area geografica; canali commerciali e ciclo di vendita; fatturato, volumi, prezzi, margini e costi; processi, capacità produttiva, fornitori e organizzazione; concorrenza e posizionamento; indicatori già monitorati; obiettivo, orizzonte temporale, budget e vincoli.
-- Non richiedere dati riservati o identificativi non necessari. Se un dato non è disponibile, proponi una stima esplicitamente qualificata oppure procedi dichiarando il limite.
-- Distingui sempre fatti forniti dall'utente, ipotesi e conclusioni. Non inventare dati, benchmark, normative o risultati garantiti. Indica le informazioni mancanti che potrebbero modificare la raccomandazione.
-- Argomenta le proposte con il nesso tra problema, causa probabile, intervento e risultato atteso. Se i dati lo consentono, mostra formule, priorità, dipendenze, rischi e trade-off.
-- Definisci KPI con formula o criterio di calcolo, valore iniziale se noto, target realistico, scadenza e responsabile/funzione suggerita. Non presentare target non supportati come previsioni certe.
-- Durante la raccolta, rispondi con le domande successive più utili; non forzare un rapporto completo quando mancano dati essenziali. Quando i dati bastano, oppure se l'utente chiede esplicitamente una valutazione preliminare, usa questa struttura:
+- Parla in italiano chiaro, diretto e professionale.
+- Adatta il linguaggio alla scala aziendale: micro-attività, PMI o grande industria.
+- Se l’utente non ha ancora specificato tutti i dati necessari, chiedi solo ciò che serve per continuare.
+- Non fare domande inutili o generiche.
+- Fai emergere i livelli di rischio, priorità e azioni concrete.
+- Genera sempre una risposta con questa struttura esatta:
 
 📊 [PROFILO ARCHITETTURA AZIENDALE]
-- sintesi del business, modello operativo e posizionamento
-- evidenze disponibili, punti di forza, criticità e cause probabili
-- ipotesi e lacune informative rilevanti
+- descrizione sintetica del business
+- modello operativo
+- punti di forza e debolezza
+- priorità strategiche
 
 📈 [STRATEGIA DI OTTIMIZZAZIONE]
-- 3-5 interventi sequenziali con motivazione, attività, priorità e orizzonte temporale
-- KPI misurabili, target e modalità di verifica, coerenti con i dati disponibili
-- risorse, dipendenze e trade-off principali
+- 3 step logici e sequenziali
+- azioni concrete, misurabili e realistiche
+- target da raggiungere nel breve e medio termine
 
 🛑 [FALL-BACK RISK]
-- rischio prioritario e relativo impatto/probabilità, qualificati se non quantificabili
-- errore operativo da evitare e misura di mitigazione
-- prossimo passo concreto e dato da monitorare
+- errore operativo da evitare assolutamente
+- rischio principale
+- misura correttiva severa
 
-Stile: professionale, analitico, argomentato e concreto; evita generalità e raccomandazioni non collegate al caso.
+Stile: incisivo, pratico, da consulente senior, mai generico.
 """
 
 conversation = [
@@ -113,28 +73,22 @@ st.session_state.messages = [
 ]
 
 with st.sidebar:
-    st.header("⚙️ Pannello di controllo")
+    st.header("⚙️ Pannello di Controllo")
     if st.button("Reset conversazione", use_container_width=True):
         st.session_state.messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "assistant", "content": build_welcome_message()},
         ]
         st.rerun()
+    st.caption("Accesso pubblico attivo. Consulente online.")
 
-    st.caption("La chiave API è configurata nei Secrets del server.")
-
+# Recupero automatico e sicuro della tua chiave API dai Secrets di Streamlit
 try:
-    openai_api_key = validate_api_key(st.secrets["OPENAI_API_KEY"])
-except (FileNotFoundError, KeyError):
-    st.error(
-        "Configurazione mancante: imposta OPENAI_API_KEY nei Secrets di Streamlit."
-    )
+    openai_api_key = st.secrets["OPENAI_API_KEY"]
+    client = OpenAI(api_key=openai_api_key)
+except Exception as e:
+    st.error("Errore di configurazione della chiave sul server. Contatta l'amministratore.")
     st.stop()
-except ValueError as exc:
-    st.error(f"Configurazione API non valida: {exc}")
-    st.stop()
-
-client = OpenAI(api_key=openai_api_key)
 
 for msg in st.session_state.messages:
     if msg["role"] == "system":
@@ -160,17 +114,13 @@ if user_input:
                 model="gpt-4o-mini",
                 messages=st.session_state.messages,
                 temperature=0.35,
-                max_tokens=1500,
+                max_tokens=700,
                 stream=True,
             )
 
             for chunk in stream:
-                delta = (
-                    chunk.choices[0].delta.content
-                    if chunk.choices and chunk.choices[0].delta
-                    else None
-                )
-                if delta:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    delta = chunk.choices[0].delta.content
                     full_response += delta
                     response_placeholder.markdown(full_response + "▌")
 
@@ -178,8 +128,7 @@ if user_input:
         except OpenAIError as exc:
             logger.warning("OpenAI request failed (%s)", type(exc).__name__)
             response_placeholder.error(
-                "La richiesta a OpenAI non è riuscita. Verifica la chiave API, "
-                "la connessione e i limiti del tuo account, quindi riprova."
+                "Il server non ha risposto. Verifica che la chiave nei Secrets sia corretta e carica di credito."
             )
             st.session_state.messages.pop()
             st.stop()
@@ -187,3 +136,4 @@ if user_input:
         st.session_state.messages.append(
             {"role": "assistant", "content": full_response}
         )
+
