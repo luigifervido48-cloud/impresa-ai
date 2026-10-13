@@ -1,81 +1,187 @@
+import hmac
+import logging
+
 import streamlit as st
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 
-st.set_page_config(page_title="ImpresaAI Pro", layout="centered")
-st.title("📊 ImpresaAI Pro v2.0")
-st.subheader("Il Consulente Strategico per la tua Azienda")
+from app_helpers import (
+    build_welcome_message,
+    normalize_user_input,
+    validate_api_key,
+)
 
-# Inizializzazione chiavi e client nella sessione del browser
-if "openai_key" not in st.session_state:
-    st.session_state.openai_key = ""
+logger = logging.getLogger(__name__)
 
-# Barra laterale protetta per l'inserimento della chiave API in totale sicurezza
-with st.sidebar:
-    st.header("⚙️ Configurazione")
-    st.session_state.openai_key = st.text_input("Inserisci OpenAI API Key:", type="password")
-    st.caption("La tua chiave viene gestita in sicurezza all'interno del tuo browser.")
+st.set_page_config(page_title="ImpresaAI Pro", page_icon="📊", layout="wide")
 
-# Blocco dell'applicazione se manca la chiave
-if not st.session_state.openai_key:
-    st.info("Per favore, inserisci la tua nuova OpenAI API Key nella barra laterale sinistra per iniziare.")
+st.title("📊 ImpresaAI Pro")
+st.caption("Il consulente strategico per aziende, PMI e micro-attività")
+
+st.markdown(
+    """
+    <style>
+    [data-testid="stChatInputTextArea"],
+    [data-testid="stChatMessageContent"] {
+        direction: ltr !important;
+        text-align: left !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+try:
+    access_password = st.secrets["ACCESS_PASSWORD"]
+except (FileNotFoundError, KeyError):
+    st.error(
+        "Configurazione mancante: imposta ACCESS_PASSWORD nei Secrets di Streamlit."
+    )
     st.stop()
 
-# Inizializzazione del client OpenAI
-client = OpenAI(api_key=st.session_state.openai_key)
+if not isinstance(access_password, str) or not access_password:
+    st.error("ACCESS_PASSWORD deve essere configurata come testo non vuoto.")
+    st.stop()
 
-# Il cuore del sistema: Il prompt ingegneristico basato su Macchina a Stati Finiti
+if "autenticato" not in st.session_state:
+    st.session_state.autenticato = False
+
+if not st.session_state.autenticato:
+    st.markdown("### 🔒 Piattaforma privata")
+    st.info("Inserisci la password fornita dall'amministratore per accedere.")
+    pass_input = st.text_input("Password di accesso", type="password")
+    if st.button("Accedi", use_container_width=True):
+        if hmac.compare_digest(
+            pass_input.encode("utf-8"), access_password.encode("utf-8")
+        ):
+            st.session_state.autenticato = True
+            st.rerun()
+        st.error("Password errata. Accesso negato.")
+    st.stop()
+
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": build_welcome_message()}
+    ]
+
 SYSTEM_PROMPT = """
-Tu sei "ImpresaAI Pro", un sistema di intelligenza artificiale per l'audit aziendale strutturato come una Macchina a Stati Finiti.
-STATO 1: INPUT_COLLECTION
-Se l'utente non ha ancora fornito i dati aziendali, richiedi questi parametri in modo chiaro ed esigi una risposta:
-1. Settore (Cosa vende e a chi?)
-2. Scala (Micro-attività, PMI o Grande Industria?)
-3. Collo di Bottiglia (Qual è il problema principale?)
-4. Budget (Zero, Basso o Strutturato?)
+Sei "ImpresaAI Pro", un consulente strategico aziendale di livello executive.
 
-STATO 2: RUNTIME_PROMPT_TUNING
-Una volta ricevuti i dati, adatta istantaneamente la tua semantica. Se l'utente è una micro-attività usa termini pratici e locali. Se è una grande industria usa metriche corporate (KPI, EBITDA, Supply Chain).
-Genera sempre l'output in tre sezioni:
-- 📊 [PROFILO ARCHITETTURA AZIENDALE]
-- 📈 [STRATEGIA DI OTTIMIZZAZIONE] (In 3 step logici e sequenziali)
-- 🛑 [FALL-BACK RISK] (Avviso brutale sull'errore operativo da evitare assolutamente)
+Obiettivo: comprendere in modo strutturato l'impresa, individuare cause e priorità e formulare raccomandazioni concrete, tecnicamente motivate e misurabili.
+
+Regole:
+- Usa italiano professionale e un lessico tecnico appropriato, spiegando i termini specialistici quando utile.
+- Adatta profondità e raccomandazioni al settore, alla dimensione, alla maturità e alle risorse dell'impresa.
+- In fase di raccolta dati, fai domande specifiche e pertinenti prima di trarre conclusioni. Organizza le domande in piccoli blocchi (massimo 5 per turno), evita di ripetere informazioni già fornite e chiedi approfondimenti solo sui punti che cambiano davvero l'analisi.
+- Indaga, quando rilevante, su: offerta e modello di ricavo; segmento clienti e area geografica; canali commerciali e ciclo di vendita; fatturato, volumi, prezzi, margini e costi; processi, capacità produttiva, fornitori e organizzazione; concorrenza e posizionamento; indicatori già monitorati; obiettivo, orizzonte temporale, budget e vincoli.
+- Non richiedere dati riservati o identificativi non necessari. Se un dato non è disponibile, proponi una stima esplicitamente qualificata oppure procedi dichiarando il limite.
+- Distingui sempre fatti forniti dall'utente, ipotesi e conclusioni. Non inventare dati, benchmark, normative o risultati garantiti. Indica le informazioni mancanti che potrebbero modificare la raccomandazione.
+- Argomenta le proposte con il nesso tra problema, causa probabile, intervento e risultato atteso. Se i dati lo consentono, mostra formule, priorità, dipendenze, rischi e trade-off.
+- Definisci KPI con formula o criterio di calcolo, valore iniziale se noto, target realistico, scadenza e responsabile/funzione suggerita. Non presentare target non supportati come previsioni certe.
+- Durante la raccolta, rispondi con le domande successive più utili; non forzare un rapporto completo quando mancano dati essenziali. Quando i dati bastano, oppure se l'utente chiede esplicitamente una valutazione preliminare, usa questa struttura:
+
+📊 [PROFILO ARCHITETTURA AZIENDALE]
+- sintesi del business, modello operativo e posizionamento
+- evidenze disponibili, punti di forza, criticità e cause probabili
+- ipotesi e lacune informative rilevanti
+
+📈 [STRATEGIA DI OTTIMIZZAZIONE]
+- 3-5 interventi sequenziali con motivazione, attività, priorità e orizzonte temporale
+- KPI misurabili, target e modalità di verifica, coerenti con i dati disponibili
+- risorse, dipendenze e trade-off principali
+
+🛑 [FALL-BACK RISK]
+- rischio prioritario e relativo impatto/probabilità, qualificati se non quantificabili
+- errore operativo da evitare e misura di mitigazione
+- prossimo passo concreto e dato da monitorare
+
+Stile: professionale, analitico, argomentato e concreto; evita generalità e raccomandazioni non collegate al caso.
 """
 
-# Inizializzazione della memoria della chat
-if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    # Messaggio iniziale di sbarramento per bloccare risposte vaghe
-    st.session_state.messages.append({
-        "role": "assistant", 
-        "content": "Benvenuto in ImpresaAI Pro. Per elaborare la tua strategia aziendale su misura, ho bisogno di mappare il tuo business.\n\nPer favore, indicami:\n1. Il tuo **settore** e cosa vendi\n2. La **dimensione** della tua azienda (Micro-attività, PMI, Grande industria)\n3. Il tuo **collo di bottiglia** (problema principale oggi)\n4. Il tuo **budget** (Zero, Basso, Strutturato)"
-    })
+conversation = [
+    msg for msg in st.session_state.messages if msg.get("role") != "system"
+]
+st.session_state.messages = [
+    {"role": "system", "content": SYSTEM_PROMPT},
+    *conversation,
+]
 
-# Mostra la cronologia dei messaggi a schermo (escludendo il prompt di sistema)
+with st.sidebar:
+    st.header("⚙️ Pannello di controllo")
+    if st.button("Reset conversazione", use_container_width=True):
+        st.session_state.messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "assistant", "content": build_welcome_message()},
+        ]
+        st.rerun()
+
+    if st.button("Esci", use_container_width=True):
+        st.session_state.autenticato = False
+        st.session_state.pop("messages", None)
+        st.rerun()
+
+    st.caption("Le credenziali sono configurate nei Secrets del server.")
+
+try:
+    openai_api_key = validate_api_key(st.secrets["OPENAI_API_KEY"])
+except (FileNotFoundError, KeyError):
+    st.error(
+        "Configurazione mancante: imposta OPENAI_API_KEY nei Secrets di Streamlit."
+    )
+    st.stop()
+except ValueError as exc:
+    st.error(f"Configurazione API non valida: {exc}")
+    st.stop()
+
+client = OpenAI(api_key=openai_api_key)
+
 for msg in st.session_state.messages:
-    if msg["role"] != "system":
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+    if msg["role"] == "system":
+        continue
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-# Gestione dell'invio dei messaggi da parte del cliente
-if user_input := st.chat_input("Inserisci i dati della tua azienda qui..."):
+user_input = normalize_user_input(
+    st.chat_input("Descrivi il tuo business, il problema e il tuo obiettivo...")
+)
+
+if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
-        st.write(user_input)
-        
-    # Chiamata in tempo reale ai server di OpenAI
+        st.markdown(user_input)
+
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
         full_response = ""
-        
-        # Generazione in streaming del testo (effetto macchina da scrivere)
-        stream = client.chat.completions.create(
-            model="gpt-4o-mini", # Modello ultra-veloce ed estremamente economico
-            messages=st.session_state.messages,
-            stream=True
+
+        try:
+            stream = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=st.session_state.messages,
+                temperature=0.35,
+                max_tokens=1500,
+                stream=True,
+            )
+
+            for chunk in stream:
+                delta = (
+                    chunk.choices[0].delta.content
+                    if chunk.choices and chunk.choices[0].delta
+                    else None
+                )
+                if delta:
+                    full_response += delta
+                    response_placeholder.markdown(full_response + "▌")
+
+            response_placeholder.markdown(full_response)
+        except OpenAIError as exc:
+            logger.warning("OpenAI request failed (%s)", type(exc).__name__)
+            response_placeholder.error(
+                "La richiesta a OpenAI non è riuscita. Verifica la chiave API, "
+                "la connessione e i limiti del tuo account, quindi riprova."
+            )
+            st.session_state.messages.pop()
+            st.stop()
+
+        st.session_state.messages.append(
+            {"role": "assistant", "content": full_response}
         )
-        for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                full_response += chunk.choices[0].delta.content
-                response_placeholder.write(full_response)
-                
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
